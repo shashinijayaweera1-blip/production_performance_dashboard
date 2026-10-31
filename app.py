@@ -1183,7 +1183,8 @@ def create_machine_chart(data, category, title, chart_color):
     fig.update_traces(
         marker_color=chart_color,
         texttemplate="%{text:.1f}",
-        textposition="outside"
+        textposition="outside",
+        textfont=dict(size=16, color=NAVY)
     )
 
     fig.update_layout(
@@ -1712,7 +1713,7 @@ if view_mode == "Summary View":
                 mode="lines+markers+text",
                 text=trend["Nail production(Ton)"].map(lambda v: f"{v:.1f}"),
                 textposition="top center",
-                textfont=dict(size=13, color=NAVY),
+                textfont=dict(size=16, color=NAVY),
                 line=dict(color=STEEL_BLUE, width=2)
             ))
 
@@ -1727,7 +1728,7 @@ if view_mode == "Summary View":
                     mode="lines+markers+text",
                     text=trend["Rod Production (Ton)"].map(lambda v: f"{v:.1f}"),
                     textposition="bottom center",
-                    textfont=dict(size=13, color=ORANGE),
+                    textfont=dict(size=16, color=ORANGE),
                     line=dict(color=ORANGE, width=2)
                 ))
 
@@ -1791,6 +1792,9 @@ if view_mode == "Summary View":
                     "Rod": ORANGE
                 }
             )
+            fig_machine_summary.update_traces(
+                textfont=dict(size=16, color=NAVY)
+            )
             fig_machine_summary.update_layout(
                 height=280,
                 margin=dict(l=10, r=10, t=20, b=10),
@@ -1833,7 +1837,7 @@ if view_mode == "Summary View":
             )
             fig_daily_dt_summary.update_traces(
                 line=dict(color=ORANGE, width=3), marker=dict(size=9),
-                mode="lines+markers+text", texttemplate="%{y:.1f}",
+                mode="lines+markers+text", texttemplate="%{y:.0f}",
                 textposition="top center", textfont=dict(size=16, color=NAVY)
             )
             fig_daily_dt_summary.update_layout(
@@ -1879,7 +1883,7 @@ if view_mode == "Summary View":
                 orientation="h",
                 text_auto=".1f"
             )
-            fig_dt.update_traces(marker_color=ORANGE)
+            fig_dt.update_traces(marker_color=ORANGE, textfont=dict(size=16, color=NAVY))
             fig_dt.update_layout(
                 height=320,
                 margin=dict(l=10, r=15, t=15, b=10),
@@ -1918,6 +1922,9 @@ if view_mode == "Summary View":
                 "Iron Dust": STEEL_BLUE,
                 "Waste": RED
             }
+        )
+        fig_rejection_summary.update_traces(
+            textfont=dict(size=16, color=NAVY)
         )
         fig_rejection_summary.update_layout(
             height=320,
@@ -2412,7 +2419,8 @@ if selected_factory == "D2 Factory":
                 fig_nail.update_traces(
                     marker_color=STEEL_BLUE,
                     texttemplate="%{text:.2f}",
-                    textposition="outside"
+                    textposition="outside",
+                    textfont=dict(size=16, color=NAVY)
                 )
 
                 fig_nail.update_layout(
@@ -2535,7 +2543,8 @@ if selected_factory == "D2 Factory":
                 fig_rod.update_traces(
                     marker_color=TEAL,
                     texttemplate="%{text:.2f}",
-                    textposition="outside"
+                    textposition="outside",
+                    textfont=dict(size=16, color=NAVY)
                 )
 
                 fig_rod.update_layout(
@@ -2811,7 +2820,7 @@ if "Date" in production_filtered.columns and "Total downtime (hours)" in product
         )
         fig_daily_dt.update_traces(
             line=dict(color=ORANGE, width=3), marker=dict(size=9),
-            mode="lines+markers+text", texttemplate="%{y:.1f}",
+            mode="lines+markers+text", texttemplate="%{y:.0f}",
             textposition="top center", textfont=dict(size=16, color=NAVY)
         )
         fig_daily_dt.update_layout(
@@ -2868,7 +2877,8 @@ if (
 
         fig.update_traces(
             marker_color=ORANGE,
-            textposition="outside"
+            textposition="outside",
+            textfont=dict(size=16, color=NAVY)
         )
 
         fig.update_layout(
@@ -3128,7 +3138,8 @@ if not production_filtered.empty:
             )
 
             fig_rejection.update_traces(
-                marker_color=RED
+                marker_color=RED,
+                textfont=dict(size=16, color=NAVY)
             )
 
             fig_rejection.update_layout(
@@ -3208,7 +3219,7 @@ with rejection_right:
         textinfo="percent",
         textposition="inside",
         insidetextorientation="horizontal",
-        textfont=dict(size=13, color="white"),
+        textfont=dict(size=16, color="white"),
         hovertemplate=(
             "<b>%{label}</b><br>"
             "Quantity: %{value:.1f} Ton<br>"
@@ -3236,6 +3247,9 @@ with rejection_right:
         plot_bgcolor="white",
         paper_bgcolor="white",
         showlegend=True,
+        # Prevent Plotly from shrinking the small rejection-slice label.
+        uniformtext_minsize=16,
+        uniformtext_mode="show",
         legend=dict(
             orientation="h",
             yanchor="bottom",
