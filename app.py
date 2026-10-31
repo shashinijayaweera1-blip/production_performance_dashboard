@@ -1072,7 +1072,7 @@ h2 {{ color:var(--navy); font-size:17px; border-bottom:2px solid #EAF1F8;
 <div class="page">
 <header class="header">
 <h1>PRODUCTION PERFORMANCE DASHBOARD</h1>
-<p>EKALA NAIL PLANT | MONTHLY PRODUCTION ANALYSIS</p>
+<p> NAIL PLANT | MONTHLY PRODUCTION ANALYSIS</p>
 <div class="meta">
 <span><strong>Factory:</strong> {factory_safe}</span>
 <span><strong>Reporting Month:</strong> {month_safe}</span>
