@@ -190,7 +190,7 @@ def build_dashboard_pdf(factory_name, month_display, production_df,
                     fontsize=12, fontweight="bold", color=NAVY,
                     bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": .9}
                 )
-            ax.set_title("Daily Downtime", fontsize=14, color=NAVY, weight="bold", pad=15)
+            ax.set_title("Daily Downtime", fontsize=12, color=NAVY, weight="bold", pad=15)
             ax.set_xlabel("Date"); ax.set_ylabel("Downtime (Hours)")
             ax.tick_params(axis="x", rotation=35, labelsize=10)
             style_axes(ax)
