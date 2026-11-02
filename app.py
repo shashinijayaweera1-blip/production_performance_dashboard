@@ -2801,12 +2801,7 @@ f"{selected_factory} in {selected_month_display}"
 
 
 # Daily downtime trend is displayed immediately above the Top 10 reasons.
-  st.markdown(
-    f'<div class="chart-title">'
-    f'Daily Downtime'
-    f'</div>',
-    unsafe_allow_html=True
-)
+
 if "Date" in production_filtered.columns and "Total downtime (hours)" in production_filtered.columns:
     daily_downtime = production_filtered[["Date", "Total downtime (hours)"]].copy()
     daily_downtime["Date"] = pd.to_datetime(daily_downtime["Date"], errors="coerce")
