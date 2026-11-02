@@ -190,7 +190,7 @@ def build_dashboard_pdf(factory_name, month_display, production_df,
                     fontsize=12, fontweight="bold", color=NAVY,
                     bbox={"boxstyle": "round,pad=0.18", "fc": "white", "ec": "none", "alpha": .9}
                 )
-            ax.set_title("Daily Downtime", fontsize=12, color=NAVY, weight="bold", pad=15)
+            ax.set_title("Daily Downtime", fontsize=16, color=NAVY, weight="bold", pad=15)
             ax.set_xlabel("Date"); ax.set_ylabel("Downtime (Hours)")
             ax.tick_params(axis="x", rotation=35, labelsize=10)
             style_axes(ax)
@@ -1710,10 +1710,7 @@ if view_mode == "Summary View":
                 x=trend["Date"],
                 y=trend["Nail production(Ton)"],
                 name="Nail",
-                mode="lines+markers+text",
-                text=trend["Nail production(Ton)"].map(lambda v: f"{v:.1f}"),
-                textposition="top center",
-                textfont=dict(size=16, color=NAVY),
+                mode="lines+markers",
                 line=dict(color=STEEL_BLUE, width=2)
             ))
 
@@ -1725,10 +1722,7 @@ if view_mode == "Summary View":
                     x=trend["Date"],
                     y=trend["Rod Production (Ton)"],
                     name="Rod",
-                    mode="lines+markers+text",
-                    text=trend["Rod Production (Ton)"].map(lambda v: f"{v:.1f}"),
-                    textposition="bottom center",
-                    textfont=dict(size=16, color=ORANGE),
+                    mode="lines+markers",
                     line=dict(color=ORANGE, width=2)
                 ))
 
@@ -1883,8 +1877,15 @@ if view_mode == "Summary View":
                 orientation="h",
                 text_auto=".1f"
             )
-            fig_dt.update_traces(marker_color=ORANGE, textfont=dict(size=16, color=NAVY))
+            fig_dt.update_traces(
+                marker_color=ORANGE,
+                textposition="outside",
+                textfont=dict(size=16, color=NAVY),
+                cliponaxis=False
+            )
             fig_dt.update_layout(
+                uniformtext_minsize=16,
+                uniformtext_mode="show",
                 height=320,
                 margin=dict(l=10, r=15, t=15, b=10),
                 paper_bgcolor="white",
@@ -2793,7 +2794,7 @@ st.markdown(
 
 st.markdown(
     '<div class="section-subtitle">'
-    'Downtime Analysis for '
+    ' Downtime Analysis for '
 f"{selected_factory} in {selected_month_display}"
     '</div>',
     unsafe_allow_html=True
@@ -2801,7 +2802,6 @@ f"{selected_factory} in {selected_month_display}"
 
 
 # Daily downtime trend is displayed immediately above the Top 10 reasons.
-
 if "Date" in production_filtered.columns and "Total downtime (hours)" in production_filtered.columns:
     daily_downtime = production_filtered[["Date", "Total downtime (hours)"]].copy()
     daily_downtime["Date"] = pd.to_datetime(daily_downtime["Date"], errors="coerce")
@@ -2813,7 +2813,12 @@ if "Date" in production_filtered.columns and "Total downtime (hours)" in product
         .groupby("Date", as_index=False)["Total downtime (hours)"].sum()
         .sort_values("Date")
     )
-    st.markdown("#### Daily Downtime")
+    st.markdown(
+        '<div class="chart-title">'
+        'Daily Downtime'
+        '</div>',
+        unsafe_allow_html=True
+    )
     if not daily_downtime.empty:
         fig_daily_dt = px.line(
             daily_downtime, x="Date", y="Total downtime (hours)",
@@ -2832,6 +2837,13 @@ if "Date" in production_filtered.columns and "Total downtime (hours)" in product
         st.plotly_chart(fig_daily_dt, use_container_width=True, key="daily_downtime_trend")
     else:
         st.info("No daily downtime data available for the selected period.")
+
+st.markdown(
+    '<div class="chart-title">'
+    'Top 10 Downtime Reasons'
+    '</div>',
+    unsafe_allow_html=True
+)
 
 if (
     "Reason" in downtime_filtered.columns
