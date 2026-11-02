@@ -2793,7 +2793,7 @@ st.markdown(
 
 st.markdown(
     '<div class="section-subtitle">'
-    'Top 10 downtime reasons for '
+    'Downtime Analysis for '
 f"{selected_factory} in {selected_month_display}"
     '</div>',
     unsafe_allow_html=True
