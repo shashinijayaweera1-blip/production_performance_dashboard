@@ -2666,10 +2666,11 @@ else:
                 text=nail_production_column
             )
 
-            fig_nail.update_traces(
-                marker_color=STEEL_BLUE,
-                texttemplate="%{text:.2f}",
-                textposition="outside"
+             fig_nail.update_traces(
+                    marker_color=STEEL_BLUE,
+                    texttemplate="%{text:.2f}",
+                    textposition="outside",
+                    textfont=dict(size=16, color=NAVY)
             )
 
             fig_nail.update_layout(
