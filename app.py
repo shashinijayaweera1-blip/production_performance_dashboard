@@ -12,7 +12,9 @@ import html
 # MONTHLY MANAGEMENT REPORT PDF EXPORT
 # ============================================================
 def build_dashboard_pdf(factory_name, month_display, production_df,
-                        downtime_df, size_df, machine_df):
+                        downtime_df, size_df, machine_df,
+                        comparison_df=None, comparison_subtitle=""):
+
     """Export the selected dashboard as a clean, chart-led monthly PDF."""
     import io
     import math
@@ -343,6 +345,40 @@ def build_dashboard_pdf(factory_name, month_display, production_df,
     for chart, group in charts:
         chart_groups.setdefault(group, []).append(chart)
 
+    # Month-on-month comparison: all six charts are composed on one PDF page.
+    comparison_chart = None
+    if comparison_df is not None and not comparison_df.empty:
+        metrics = comparison_df["Metric"].drop_duplicates().tolist()
+        months = comparison_df["Month"].drop_duplicates().tolist()
+        fig, axes = plt.subplots(3, 2, figsize=(11.8, 7.2))
+        axes = axes.flatten()
+        month_colors = [BLUE, TEAL]
+        for index, metric in enumerate(metrics[:6]):
+            ax = axes[index]
+            metric_data = comparison_df[comparison_df["Metric"] == metric]
+            vals = []
+            for month in months:
+                found = metric_data.loc[metric_data["Month"] == month, "Value"]
+                vals.append(float(found.iloc[0]) if not found.empty else 0.0)
+            bars = ax.bar(months, vals, color=month_colors[:len(months)], width=.58)
+            ax.bar_label(bars, fmt="%.0f" if "Packaging" in metric else "%.1f",
+                         padding=3, fontsize=9, color=NAVY, weight="bold")
+            ax.set_title(metric, fontsize=12, color=NAVY, weight="bold", pad=8)
+            ax.tick_params(axis="x", labelsize=9)
+            ax.tick_params(axis="y", labelsize=8)
+            ax.set_ylabel("25 kg Bags" if "Packaging" in metric else "Ton", fontsize=8)
+            style_axes(ax)
+        for index in range(len(metrics[:6]), 6):
+            axes[index].set_visible(False)
+        fig.suptitle("Month-on-Month Production Comparison", fontsize=16,
+                     color=NAVY, weight="bold", y=.99)
+        fig.tight_layout(rect=[0, 0, 1, .95])
+        comparison_chart = io.BytesIO()
+        fig.savefig(comparison_chart, format="png", dpi=190,
+                    bbox_inches="tight", facecolor="white")
+        plt.close(fig)
+        comparison_chart.seek(0)
+
     # Page 1: report heading, all dashboard KPIs, then the production trend.
     trend_charts = chart_groups.pop("trend", [])
     if trend_charts:
@@ -372,6 +408,16 @@ def build_dashboard_pdf(factory_name, month_display, production_df,
         story.append(PageBreak())
         chart.seek(0)
         story.append(Image(chart, width=max_w, height=max_h, kind="proportional"))
+
+    # Keep all month-on-month comparison charts together on one final PDF page.
+    if comparison_chart is not None:
+        story.append(PageBreak())
+        story.append(Paragraph("Month-on-Month Production Comparison", section_style))
+        if comparison_subtitle:
+            story.append(Paragraph(comparison_subtitle, meta_style))
+        story.append(Spacer(1, 2*mm))
+        story.append(Image(comparison_chart, width=max_w, height=145*mm, kind="proportional"))
+
     doc.build(story, onFirstPage=page_decor, onLaterPages=page_decor)
     return pdf_buffer.getvalue()
 
@@ -1391,13 +1437,10 @@ with col_month:
     selected_month = st.selectbox(
         "Month",
         available_months,
-        format_func=lambda x: pd.Timestamp(x).strftime(
-            "%B %Y"
-        ),
+        index=len(available_months) - 1 if available_months else 0,
+        format_func=lambda x: pd.Timestamp(x).strftime("%B %Y"),
         label_visibility="collapsed"
     )
-
-
 # ============================================================
 # INFORMATION
 # ============================================================
@@ -1504,6 +1547,54 @@ if "Date" in machine_filtered.columns:
     machine_filtered = machine_filtered[
         machine_filtered["Month_Start"] == selected_month
     ].copy()
+
+
+# ============================================================
+# PREVIOUS MONTH DATA FOR EXPANDABLE COMPARISONS
+# ============================================================
+
+comparison_previous_month = (
+    pd.Timestamp(selected_month) - pd.DateOffset(months=1)
+).to_period("M").to_timestamp()
+comparison_previous_display = comparison_previous_month.strftime("%B %Y")
+comparison_current_display = pd.Timestamp(selected_month).strftime("%B %Y")
+
+production_previous_data = production[
+    production["Month_Start"] == comparison_previous_month
+].copy()
+
+downtime_previous_data = downtime.copy()
+if "Date" in downtime_previous_data.columns:
+    downtime_previous_data["Month_Start"] = (
+        downtime_previous_data["Date"].dt.to_period("M").dt.to_timestamp()
+    )
+    downtime_previous_data = downtime_previous_data[
+        downtime_previous_data["Month_Start"] == comparison_previous_month
+    ].copy()
+else:
+    downtime_previous_data = pd.DataFrame()
+
+size_previous_data = size_production.copy()
+if "Date" in size_previous_data.columns:
+    size_previous_data["Month_Start"] = (
+        size_previous_data["Date"].dt.to_period("M").dt.to_timestamp()
+    )
+    size_previous_data = size_previous_data[
+        size_previous_data["Month_Start"] == comparison_previous_month
+    ].copy()
+else:
+    size_previous_data = pd.DataFrame()
+
+machine_previous_data = machine_production.copy()
+if "Date" in machine_previous_data.columns:
+    machine_previous_data["Month_Start"] = (
+        machine_previous_data["Date"].dt.to_period("M").dt.to_timestamp()
+    )
+    machine_previous_data = machine_previous_data[
+        machine_previous_data["Month_Start"] == comparison_previous_month
+    ].copy()
+else:
+    machine_previous_data = pd.DataFrame()
 
 
 # ============================================================
@@ -1623,6 +1714,36 @@ daily_avg_rod = (
 
 
 # ============================================================
+# PREPARE MONTH-ON-MONTH COMPARISON DATA
+# ============================================================
+
+comparison_previous_data = production_previous_data.copy()
+
+comparison_rows = []
+if not comparison_previous_data.empty:
+    comparison_metrics = [
+        ("Raw Material", "Raw material (Ton)"),
+        ("Wire Drawing", "Wire Drawing (Ton)"),
+        ("Total Rejection", "Total Rejection (Ton)"),
+        ("Nail Production", "Nail production(Ton)"),
+    ]
+    if selected_factory == "D2 Factory":
+        comparison_metrics.append(("Rod Production", "Rod Production (Ton)"))
+    comparison_metrics.append(("Nail Packaging", "Packaging(25kg bags)"))
+    for metric_name, column_name in comparison_metrics:
+        comparison_rows.extend([
+            {"Metric": metric_name, "Month": comparison_previous_display,
+             "Value": safe_sum(comparison_previous_data, column_name)},
+            {"Metric": metric_name, "Month": comparison_current_display,
+             "Value": safe_sum(production_filtered, column_name)},
+        ])
+comparison_pdf_df = pd.DataFrame(comparison_rows)
+comparison_subtitle = (
+    f"Comparison: {comparison_previous_display} vs {comparison_current_display}"
+)
+
+
+# ============================================================
 # DOWNLOAD PDF — CHARTS ONLY
 # ============================================================
 
@@ -1633,6 +1754,8 @@ pdf_bytes = build_dashboard_pdf(
     downtime_df=downtime_filtered,
     size_df=size_filtered,
     machine_df=machine_filtered,
+    comparison_df=comparison_pdf_df,
+    comparison_subtitle=comparison_subtitle,
 )
 
 pdf_filename_factory = selected_factory.lower().replace(" ", "_")
@@ -2121,6 +2244,95 @@ with p3:
         f'</div>',
         unsafe_allow_html=True
     )
+
+# ============================================================
+# MONTH-ON-MONTH PRODUCTION COMPARISON
+# ============================================================
+
+with st.expander("Month-on-Month Production Comparison", expanded=False):
+
+    st.markdown(
+        f'<div class="section-subtitle">{comparison_subtitle}</div>',
+        unsafe_allow_html=True
+    )
+
+    if comparison_previous_data.empty:
+        st.info(
+            f"No previous month data available for comparison "
+            f"with {selected_month_display}."
+        )
+    else:
+        # Keep each indicator in its own chart. The two month names are shown
+        # on the horizontal axis in the same previous/current order throughout.
+        comparison_charts = [
+            ("Raw Material", "Raw material (Ton)", "Ton", STEEL_BLUE, 1),
+            ("Wire Drawing", "Wire Drawing (Ton)", "Ton", TEAL, 1),
+            ("Total Rejection", "Total Rejection (Ton)", "Ton", RED, 1),
+            ("Nail Production", "Nail production(Ton)", "Ton", STEEL_BLUE, 1),
+        ]
+        if selected_factory == "D2 Factory":
+            comparison_charts.append(
+                ("Rod Production", "Rod Production (Ton)", "Ton", ORANGE, 1)
+            )
+        comparison_charts.append(
+            ("Nail Packaging", "Packaging(25kg bags)", "25 kg Bags", PURPLE, 0)
+        )
+
+        for row_start in range(0, len(comparison_charts), 2):
+            chart_columns = st.columns(2)
+            for column, chart_info in zip(
+                chart_columns, comparison_charts[row_start:row_start + 2]
+            ):
+                metric_name, source_column, unit_name, chart_color, decimals = chart_info
+                with column:
+                    chart_values = [
+                        safe_sum(comparison_previous_data, source_column),
+                        safe_sum(production_filtered, source_column),
+                    ]
+                    chart_data = pd.DataFrame({
+                        "Month": [comparison_previous_display, comparison_current_display],
+                        "Quantity": chart_values,
+                    })
+                    st.markdown(
+                        f'<div class="chart-title">{metric_name}</div>',
+                        unsafe_allow_html=True
+                    )
+                    fig_metric = px.bar(
+                        chart_data,
+                        x="Month",
+                        y="Quantity",
+                        color="Month",
+                        text="Quantity",
+                        color_discrete_map={
+                            comparison_previous_display: STEEL_BLUE,
+                            comparison_current_display: TEAL,
+                        },
+                        category_orders={
+                            "Month": [comparison_previous_display, comparison_current_display]
+                        },
+                    )
+                    fig_metric.update_traces(
+                        texttemplate=("%{text:,.0f}" if decimals == 0 else "%{text:,.1f}"),
+                        textposition="outside",
+                        textfont=dict(size=14, color=NAVY),
+                        cliponaxis=False,
+                    )
+                    fig_metric.update_layout(
+                        height=300,
+                        margin=dict(l=20, r=20, t=35, b=25),
+                        plot_bgcolor="white",
+                        paper_bgcolor="white",
+                        xaxis_title=None,
+                        yaxis_title=unit_name,
+                        showlegend=False,
+                        uniformtext_minsize=12,
+                        uniformtext_mode="show",
+                    )
+                    st.plotly_chart(
+                        fig_metric,
+                        use_container_width=True,
+                        key=f"month_comparison_{metric_name.lower().replace(' ', '_')}",
+                    )
 
 
 # ============================================================
@@ -2667,11 +2879,11 @@ else:
             )
 
             fig_nail.update_traces(
-                    marker_color=STEEL_BLUE,
+               marker_color=TEAL,
                     texttemplate="%{text:.2f}",
                     textposition="outside",
                     textfont=dict(size=16, color=NAVY)
-                )
+            )
 
             fig_nail.update_layout(
                 height=430,
@@ -2705,6 +2917,109 @@ else:
         st.info(
             "Nail category data is not available."
         )
+
+
+# ============================================================
+# PREVIOUS MONTH SIZE-WISE PRODUCTION COMPARISON
+# ============================================================
+
+with st.expander("View Previous Month Size-Wise Production Comparison", expanded=False):
+
+    if size_previous_data.empty:
+        st.info(f"No size-wise production data available for {comparison_previous_display}.")
+    else:
+        def show_size_month_comparison(
+            previous_df, current_df, category_candidates, quantity_candidates,
+            chart_title, chart_key, previous_color, current_color
+        ):
+            previous_category = find_column(previous_df, category_candidates)
+            previous_quantity = find_column(previous_df, quantity_candidates)
+            current_category = find_column(current_df, category_candidates)
+            current_quantity = find_column(current_df, quantity_candidates)
+
+            if not all([previous_category, previous_quantity, current_category, current_quantity]):
+                st.info(f"{chart_title} comparison data is unavailable.")
+                return
+
+            def summarize(frame, category_col, quantity_col, month_label):
+                data = frame[[category_col, quantity_col]].copy()
+                data[category_col] = data[category_col].fillna("").astype(str).str.strip()
+                data[quantity_col] = pd.to_numeric(data[quantity_col], errors="coerce").fillna(0)
+                data = data[~data[category_col].str.lower().isin(["", "nan", "none"])]
+                data = data.groupby(category_col, as_index=False)[quantity_col].sum()
+                data = data.rename(columns={category_col: "Category", quantity_col: "Production (Ton)"})
+                data["Month"] = month_label
+                return data
+
+            previous_summary = summarize(
+                previous_df, previous_category, previous_quantity, comparison_previous_display
+            )
+            current_summary = summarize(
+                current_df, current_category, current_quantity, comparison_current_display
+            )
+            comparison = pd.concat([previous_summary, current_summary], ignore_index=True)
+
+            if comparison.empty:
+                st.info(f"No {chart_title.lower()} values found for these months.")
+                return
+
+            fig = px.bar(
+                comparison,
+                x="Category",
+                y="Production (Ton)",
+                color="Month",
+                barmode="group",
+                text="Production (Ton)",
+                category_orders={"Month": [comparison_previous_display, comparison_current_display]},
+                color_discrete_map={
+                    comparison_previous_display: previous_color,
+                    comparison_current_display: current_color,
+                },
+                title=chart_title,
+            )
+            fig.update_traces(
+                texttemplate="%{text:.2f}",
+                textposition="outside",
+                textfont=dict(size=16, color=NAVY),
+                cliponaxis=False,
+            )
+            fig.update_layout(
+                height=420,
+                margin=dict(l=20, r=20, t=55, b=35),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                xaxis_title="Production Category",
+                yaxis_title="Production (Ton)",
+                legend_title=None,
+            )
+            st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+        if selected_factory == "D2 Factory":
+            previous_size_col1, previous_size_col2 = st.columns(2)
+            with previous_size_col1:
+                show_size_month_comparison(
+                    size_previous_data, size_filtered,
+                    ["Nail Catogery", "Nail Category"],
+                    ["Nail_Production", "Nail Production"],
+                    "Nail Production by Category - Month Comparison",
+                    "previous_nail_size_month_comparison", STEEL_BLUE, TEAL
+                )
+            with previous_size_col2:
+                show_size_month_comparison(
+                    size_previous_data, size_filtered,
+                    ["Rod Catogery", "Rod Category"],
+                    ["Rod_Production", "Rod Production"],
+                    "Rod Production by Category - Month Comparison",
+                    "previous_rod_size_month_comparison", STEEL_BLUE, TEAL
+                )
+        else:
+            show_size_month_comparison(
+                size_previous_data, size_filtered,
+                ["Nail Catogery", "Nail Category"],
+                ["Nail_Production", "Nail Production"],
+                "Nail Production by Category - Month Comparison",
+                "previous_nail_size_month_comparison", STEEL_BLUE, TEAL
+            )
 
 
 # ============================================================
@@ -2931,6 +3246,67 @@ else:
 
 
 # ============================================================
+# PREVIOUS MONTH TOP 10 DOWNTIME REASONS COMPARISON
+# ============================================================
+
+with st.expander("View Previous Month Top 10 Downtime Reasons", expanded=False):
+
+    if downtime_previous_data.empty:
+        st.info(f"No downtime records available for {comparison_previous_display}.")
+    elif not all(col in downtime_previous_data.columns for col in ["Reason", "Downtime (hrs)"]):
+        st.info("Downtime reason columns are not available for the previous month.")
+    else:
+        def downtime_reason_summary(frame, month_label):
+            data = frame[["Reason", "Downtime (hrs)"]].copy()
+            data["Reason"] = data["Reason"].fillna("Unspecified").astype(str).str.strip()
+            data["Downtime (hrs)"] = pd.to_numeric(data["Downtime (hrs)"], errors="coerce").fillna(0)
+            summary = (
+                data.groupby("Reason", as_index=False)["Downtime (hrs)"]
+                .sum()
+                .sort_values("Downtime (hrs)", ascending=False)
+                .head(10)
+            )
+            summary["Month"] = month_label
+            return summary
+
+        previous_top10 = downtime_reason_summary(downtime_previous_data, comparison_previous_display)
+        current_top10 = downtime_reason_summary(downtime_filtered, comparison_current_display)
+        downtime_month_comparison = pd.concat([previous_top10, current_top10], ignore_index=True)
+
+        if downtime_month_comparison.empty:
+            st.info("No downtime reason values are available for comparison.")
+        else:
+            fig_dt_comparison = px.bar(
+                downtime_month_comparison,
+                x="Downtime (hrs)",
+                y="Reason",
+                color="Month",
+                barmode="group",
+                orientation="h",
+                text="Downtime (hrs)",
+                category_orders={"Month": [comparison_previous_display, comparison_current_display]},
+                color_discrete_map={comparison_previous_display: STEEL_BLUE, comparison_current_display: ORANGE},
+                title="Top 10 Downtime Reasons - Month Comparison",
+            )
+            fig_dt_comparison.update_traces(
+                texttemplate="%{text:.1f}",
+                textposition="outside",
+                textfont=dict(size=16, color=NAVY),
+                cliponaxis=False,
+            )
+            fig_dt_comparison.update_layout(
+                height=560,
+                margin=dict(l=20, r=55, t=55, b=25),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                xaxis_title="Downtime (Hours)",
+                yaxis_title="Downtime Reason",
+                legend_title=None,
+            )
+            st.plotly_chart(fig_dt_comparison, use_container_width=True, key="previous_top10_downtime_comparison")
+
+
+# ============================================================
 # DOWNTIME VS SHIFT TIME GAUGE
 # ============================================================
 
@@ -3082,6 +3458,165 @@ else:
 
 
 # ============================================================
+# PREVIOUS MONTH DOWNTIME UTILIZATION COMPARISON
+# ============================================================
+
+
+with st.expander("View Previous Month Downtime Utilization", expanded=False):
+
+    if production_previous_data.empty:
+        st.info(f"No production/shift-time records available for {comparison_previous_display}.")
+
+    else:
+        previous_shift_time = safe_sum(production_previous_data, "Machine shift time (hours)")
+        previous_downtime = safe_sum(production_previous_data, "Total downtime (hours)")
+        previous_operating_time = max(previous_shift_time - previous_downtime, 0)
+        previous_downtime_pct = (previous_downtime / previous_shift_time * 100) if previous_shift_time > 0 else 0
+        current_downtime_pct = (total_downtime / total_shift_time * 100) if total_shift_time > 0 else 0
+        current_operating_time = max(total_shift_time - total_downtime, 0)
+
+        util_kpi1, util_kpi2, util_kpi3 = st.columns(3)
+        util_kpi1.metric("Previous Month Shift Time", f"{previous_shift_time:,.1f} hrs")
+        util_kpi2.metric("Previous Month Downtime", f"{previous_downtime:,.1f} hrs")
+        util_kpi3.metric("Previous Month Operating Time", f"{previous_operating_time:,.1f} hrs")
+
+        # ==========================================
+        # SHIFT TIME, DOWNTIME AND OPERATING TIME
+        # ==========================================
+
+        utilization_comparison = pd.DataFrame([
+            {"Month": comparison_previous_display, "Time Type": "Shift Time", "Hours": previous_shift_time},
+            {"Month": comparison_previous_display, "Time Type": "Downtime", "Hours": previous_downtime},
+            {"Month": comparison_previous_display, "Time Type": "Operating Time", "Hours": previous_operating_time},
+            {"Month": comparison_current_display, "Time Type": "Shift Time", "Hours": total_shift_time},
+            {"Month": comparison_current_display, "Time Type": "Downtime", "Hours": total_downtime},
+            {"Month": comparison_current_display, "Time Type": "Operating Time", "Hours": current_operating_time},
+        ])
+
+        fig_util = px.bar(
+            utilization_comparison,
+            x="Time Type",
+            y="Hours",
+            color="Month",
+            barmode="group",
+            text="Hours",
+            category_orders={"Month": [comparison_previous_display, comparison_current_display]},
+            color_discrete_map={
+                comparison_previous_display: STEEL_BLUE,
+                comparison_current_display: TEAL
+            },
+            title="Shift Time, Downtime and Operating Time",
+        )
+
+        fig_util.update_traces(
+            texttemplate="%{text:.1f}",
+            textposition="outside",
+            cliponaxis=False,
+            textfont=dict(size=15)
+        )
+
+        fig_util.update_layout(
+            height=430,
+            margin=dict(l=30, r=30, t=75, b=40),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+
+            title=dict(
+                font=dict(size=20, color=NAVY),
+                x=0.5,
+                xanchor="center"
+            ),
+
+            xaxis=dict(
+                title=None,
+                tickfont=dict(size=15),
+            ),
+
+            yaxis=dict(
+                title=dict(text="Hours", font=dict(size=16)),
+                tickfont=dict(size=15),
+            ),
+
+            legend=dict(
+                title=None,
+                font=dict(size=15),
+            ),
+        )
+
+        st.plotly_chart(
+            fig_util,
+            use_container_width=True,
+            key="previous_downtime_utilization_hours_comparison"
+        )
+
+        # ==========================================
+        # DOWNTIME PERCENTAGE COMPARISON
+        # ==========================================
+
+        pct_comparison = pd.DataFrame({
+            "Month": [
+                comparison_previous_display,
+                comparison_current_display
+            ],
+            "Downtime (%)": [
+                previous_downtime_pct,
+                current_downtime_pct
+            ],
+        })
+
+        fig_pct = px.bar(
+            pct_comparison,
+            x="Month",
+            y="Downtime (%)",
+            color="Month",
+            text="Downtime (%)",
+            color_discrete_map={
+                comparison_previous_display: STEEL_BLUE,
+                comparison_current_display: ORANGE
+            },
+            title="Downtime as a Percentage of Shift Time",
+        )
+
+        fig_pct.update_traces(
+            texttemplate="%{text:.1f}%",
+            textposition="outside",
+            cliponaxis=False,
+            textfont=dict(size=15)
+        )
+
+        fig_pct.update_layout(
+            height=380,
+            margin=dict(l=30, r=30, t=75, b=40),
+            plot_bgcolor="white",
+            paper_bgcolor="white",
+
+            title=dict(
+                font=dict(size=20, color=NAVY),
+                x=0.5,
+                xanchor="center"
+            ),
+
+            xaxis=dict(
+                title=None,
+                tickfont=dict(size=15),
+            ),
+
+            yaxis=dict(
+                title=dict(text="Downtime (%)", font=dict(size=16)),
+                tickfont=dict(size=15),
+            ),
+
+            showlegend=False,
+        )
+
+        st.plotly_chart(
+            fig_pct,
+            use_container_width=True,
+            key="previous_downtime_utilization_pct_comparison"
+        )
+
+
+# ============================================================
 # REJECTION ANALYSIS
 # ============================================================
 
@@ -3187,6 +3722,7 @@ if not production_filtered.empty:
     # ========================================================
 
     
+
 with rejection_right:
 
     # Total nail production for both factories
@@ -3201,19 +3737,17 @@ with rejection_right:
         "Total Rejection (Ton)"
     )
 
-    # Pie chart data: Nail Production vs Rejection
-    pie_df = pd.DataFrame(
-        {
-            "Type": [
-                "Total Nail Production",
-                "Total Rejection"
-            ],
-            "Quantity": [
-                total_nail_production,
-                total_rejection
-            ]
-        }
-    )
+    # Pie chart data
+    pie_df = pd.DataFrame({
+        "Type": [
+            "Total Nail Production",
+            "Total Rejection"
+        ],
+        "Quantity": [
+            total_nail_production,
+            total_rejection
+        ]
+    })
 
     fig_pie = px.pie(
         pie_df,
@@ -3224,12 +3758,8 @@ with rejection_right:
 
     fig_pie.update_traces(
         marker=dict(
-            colors=[
-                STEEL_BLUE,
-                RED
-            ]
+            colors=[STEEL_BLUE, RED]
         ),
-        # Keep percentages inside the donut; category names remain in legend.
         textinfo="percent",
         textposition="inside",
         insidetextorientation="horizontal",
@@ -3252,16 +3782,10 @@ with rejection_right:
             font=dict(size=16, color=NAVY)
         ),
         height=390,
-        margin=dict(
-            l=25,
-            r=25,
-            t=70,
-            b=65
-        ),
+        margin=dict(l=25, r=25, t=70, b=65),
         plot_bgcolor="white",
         paper_bgcolor="white",
         showlegend=True,
-        # Prevent Plotly from shrinking the small rejection-slice label.
         uniformtext_minsize=16,
         uniformtext_mode="show",
         legend=dict(
@@ -3279,6 +3803,104 @@ with rejection_right:
         use_container_width=True
     )
 
+    # =================================================
+    # PREVIOUS MONTH PRODUCTION VS REJECTION
+    # =================================================
+
+    with st.expander(
+        "View Previous Month Production vs Rejection",
+        expanded=False
+    ):
+
+        if production_previous_data.empty:
+
+            st.info(
+                f"No production and rejection data available "
+                f"for {comparison_previous_display}."
+            )
+
+        else:
+
+            previous_nail_production = safe_sum(
+                production_previous_data,
+                "Nail production(Ton)"
+            )
+
+            previous_total_rejection = safe_sum(
+                production_previous_data,
+                "Total Rejection (Ton)"
+            )
+
+            previous_pie_df = pd.DataFrame({
+                "Type": [
+                    "Total Nail Production",
+                    "Total Rejection"
+                ],
+                "Quantity": [
+                    previous_nail_production,
+                    previous_total_rejection
+                ]
+            })
+
+            fig_previous_pie = px.pie(
+                previous_pie_df,
+                names="Type",
+                values="Quantity",
+                hole=0.35
+            )
+
+            fig_previous_pie.update_traces(
+                marker=dict(
+                    colors=[STEEL_BLUE, RED]
+                ),
+                textinfo="percent",
+                textposition="inside",
+                insidetextorientation="horizontal",
+                textfont=dict(size=16, color="white"),
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Quantity: %{value:.1f} Ton<br>"
+                    "Percentage: %{percent}"
+                    "<extra></extra>"
+                )
+            )
+
+            fig_previous_pie.update_layout(
+                title=dict(
+                    text=f"Production vs Rejection - {comparison_previous_display}",
+                    x=0.5,
+                    xanchor="center",
+                    y=0.98,
+                    yanchor="top",
+                    font=dict(size=16, color=NAVY)
+                ),
+                height=390,
+                margin=dict(
+                    l=25,
+                    r=25,
+                    t=70,
+                    b=65
+                ),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                showlegend=True,
+                uniformtext_minsize=16,
+                uniformtext_mode="show",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.12,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=11)
+                )
+            )
+
+            st.plotly_chart(
+                fig_previous_pie,
+                use_container_width=True,
+                key="previous_production_rejection_pie"
+            )
 
 # ============================================================
 # FOOTER
